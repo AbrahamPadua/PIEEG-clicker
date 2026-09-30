@@ -49,9 +49,9 @@ def _chip_paths():
     return sorted(glob.glob("/dev/gpiochip*"), key=lambda p: int(re.sub(r"\D", "", p) or 0))
 
 
-# The header GPIOs are gpiochip0 on the Pi 4, and on the Pi 5 since kernel 6.6.47
-# (Aug 2024); older Pi 5 kernels used gpiochip4. With `gpiochip` unset we look the line
-# up by its name ("GPIO26"), which works on all of them.
+# The header GPIOs are gpiochip0 on the Pi 4 and on the Pi 5 since mid-2024 kernels;
+# earlier Pi 5 kernels used gpiochip4, and the number has moved again since. With
+# `gpiochip` unset we look the line up by its name ("GPIO26"), which works on all of them.
 
 class _DrdyV2:
     """libgpiod 2.x API: PyPI gpiod >= 2, python3-libgpiod on Raspberry Pi OS Trixie."""
