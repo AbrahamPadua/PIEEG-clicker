@@ -122,13 +122,14 @@ def analyse(rec: Recording, script: List[Step], cfg: Config) -> Tuple[Config, Li
     scores = {pol: _responses(rec.blinks[pol], blink_prompts) for pol in (1, -1)}
     pol = max((1, -1), key=lambda p: (len(scores[p]), sum(scores[p])))
     deliberate = scores[pol]
-    natural = [e.amplitude for e in rec.blinks[pol] if rest_t0 <= e.t < blink_prompts[0] - 1.0]
+    natural = [e.amplitude for e in rec.blinks[pol] if rest_t0 <= e.t < talk_t0 + TALK_S]
     if len(deliberate) < BLINK_PROMPTS // 2:
         raise RuntimeError(
             f"Only {len(deliberate)}/{BLINK_PROMPTS} prompted blinks were found. Check that the "
             "Fp1/Fp2 electrodes touch the skin and that blink.channels matches your wiring, then retry.")
     if pol != cfg.blink.polarity:
-        report.append(f"Blinks appear as NEGATIVE peaks on your wiring; set blink.polarity = {pol}.")
+        report.append(f"Blinks are {'negative' if pol < 0 else 'positive'} peaks on your wiring: "
+                      f"blink.polarity set to {pol}.")
     floor = max(40.0, 5.0 * rec.noise_sigma.get(pol, 0.0))
     d_med, d_min = statistics.median(deliberate), min(deliberate)
     thr = 0.6 * d_med
@@ -158,8 +159,9 @@ def analyse(rec: Recording, script: List[Step], cfg: Config) -> Tuple[Config, Li
             cthr = float(np.sqrt(speech * c))  # geometric midpoint
             report.append(f"Jaw clench: {c:.0f} µV vs talking {speech:.0f} µV. Threshold set to {cthr:.0f} µV.")
         else:
-            cthr = 0.8 * c
-            report.append(f"Jaw clench ({c:.0f} µV) barely exceeds talking ({speech:.0f} µV): "
-                          "clench gestures may misfire while you speak. Consider leaving 'clench' unmapped.")
+            cthr = max(0.8 * c, 1.2 * speech)  # never below talking: better missed than misfired
+            report.append(f"Jaw clench ({c:.0f} µV) barely exceeds talking ({speech:.0f} µV): the threshold "
+                          f"stays above talking ({cthr:.0f} µV), so clenches may be hard to trigger. "
+                          "Clench harder, add temple electrodes, or leave 'clench' unmapped.")
         new.clench.threshold_uv = round(cthr, 1)
     return new, report

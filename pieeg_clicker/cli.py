@@ -181,6 +181,6 @@ def main(argv=None) -> int:
         return 2
     try:
         return args.func(cfg, args)
-    except (RuntimeError, OSError) as exc:
+    except (RuntimeError, OSError, ValueError) as exc:
         logger.error("%s", exc)
         return 1
