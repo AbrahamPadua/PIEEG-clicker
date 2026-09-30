@@ -111,7 +111,7 @@ class UinputBackend:
         capabilities = sorted(set(range(1, 32)) | set(self._codes.values()))
         try:
             self._ui = evdev.UInput(events={self._ev_key: capabilities}, name="PiEEG Receiver")
-        except (OSError, evdev.UInputError) as exc:  # UInputError is not an OSError
+        except (OSError, getattr(evdev, "UInputError", OSError)) as exc:  # not an OSError subclass
             raise RuntimeError(
                 f"cannot create the uinput device: {exc}\nIt needs write access to /dev/uinput: "
                 "run 'sudo modprobe uinput', install extras/99-pieeg-uinput.rules and join the "

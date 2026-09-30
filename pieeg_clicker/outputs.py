@@ -157,7 +157,7 @@ class UinputOutput(Output):
         try:
             # evdev raises UInputError (not an OSError) for a missing or unwritable /dev/uinput.
             self._ui = evdev.UInput(events={self._ev_key: capabilities}, name=device_name)
-        except (OSError, evdev.UInputError) as exc:
+        except (OSError, getattr(evdev, "UInputError", OSError)) as exc:
             raise RuntimeError(_UINPUT_HELP.format(error=exc)) from exc
         time.sleep(_SETTLE_S)
         logger.info("uinput virtual keyboard %r ready (keys: %s)", device_name,
