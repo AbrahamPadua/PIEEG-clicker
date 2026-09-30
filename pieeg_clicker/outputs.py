@@ -151,10 +151,12 @@ class UinputOutput(Output):
         self._ev_key = ecodes.EV_KEY
         self._codes = {key: getattr(ecodes, _EVDEV_NAMES.get(key, "KEY_" + key.upper()))
                        for key in set(self.keys.values())}
+        # Also declare key codes 1-31 (Esc, digits, Q..S): udev only tags a device with all of
+        # them as ID_INPUT_KEYBOARD, which some X11/Wayland setups require before using it.
+        capabilities = sorted(set(range(1, 32)) | set(self._codes.values()))
         try:
             # evdev raises UInputError (not an OSError) for a missing or unwritable /dev/uinput.
-            self._ui = evdev.UInput(events={self._ev_key: sorted(self._codes.values())},
-                                    name=device_name)
+            self._ui = evdev.UInput(events={self._ev_key: capabilities}, name=device_name)
         except (OSError, evdev.UInputError) as exc:
             raise RuntimeError(_UINPUT_HELP.format(error=exc)) from exc
         time.sleep(_SETTLE_S)

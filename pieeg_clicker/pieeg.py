@@ -1,4 +1,10 @@
-"""PiEEG driver: TI ADS1299 over SPI (spidev), DRDY watched with libgpiod edge events."""
+"""PiEEG driver: TI ADS1299 over SPI (spidev), DRDY watched with libgpiod edge events.
+
+Wiring and register setup follow the official PiEEG-8 scripts (pieeg-club/PiEEG):
+SPI0 with hardware CE0 (/dev/spidev0.0, mode 1), DRDY on BCM GPIO26 (header pin 37),
+REF electrode on SRB1 (MISC1 = 0x20), 250 SPS, gain 1. RESET/START are SPI commands;
+no other GPIOs are used (GPIO19/GPIO13 belong to the second chip of the PiEEG-16).
+"""
 from __future__ import annotations
 
 import glob
@@ -27,6 +33,7 @@ GAIN_BITS = {1: 0b000, 2: 0b001, 4: 0b010, 6: 0b011, 8: 0b100, 12: 0b101, 24: 0b
 VREF = 4.5
 N_CHANNELS = 8
 FRAME_BYTES = 3 + 3 * N_CHANNELS  # 24-bit status word + 8 x 24-bit samples
+MAX_JUMP_UV = 2500.0  # bigger sample-to-sample jumps are SPI glitches (cf. PiEEG-server)
 
 
 def _import_gpiod():
@@ -42,14 +49,18 @@ def _chip_paths():
     return sorted(glob.glob("/dev/gpiochip*"), key=lambda p: int(re.sub(r"\D", "", p) or 0))
 
 
+# The header GPIOs are gpiochip0 on the Pi 4, and on the Pi 5 since kernel 6.6.47
+# (Aug 2024); older Pi 5 kernels used gpiochip4. With `gpiochip` unset we look the line
+# up by its name ("GPIO26"), which works on all of them.
+
 class _DrdyV2:
-    """DRDY falling edges via the libgpiod 2.x API (PyPI gpiod >= 2, Raspberry Pi OS Trixie)."""
+    """libgpiod 2.x API: PyPI gpiod >= 2, python3-libgpiod on Raspberry Pi OS Trixie."""
 
     def __init__(self, gpiod, gpio: int, chip: Optional[str]):
         from gpiod.line import Direction, Edge
 
         path, offset = chip, gpio
-        if chip is None:  # find the chip that owns "GPIO26" (gpiochip0 on Pi 4/5, gpiochip4 on older Pi 5 kernels)
+        if chip is None:
             path = "/dev/gpiochip0"
             for candidate in _chip_paths():
                 try:
@@ -61,7 +72,7 @@ class _DrdyV2:
                     continue
         settings = gpiod.LineSettings(direction=Direction.INPUT, edge_detection=Edge.FALLING)
         self._req = gpiod.request_lines(path, consumer="pieeg-clicker", config={offset: settings})
-        logger.info("DRDY on %s line %d", path, offset)
+        logger.info("DRDY on %s line %d (libgpiod 2)", path, offset)
 
     def wait(self, timeout_s: float) -> int:
         if not self._req.wait_edge_events(timedelta(seconds=timeout_s)):
@@ -73,15 +84,15 @@ class _DrdyV2:
 
 
 class _DrdyV1:
-    """DRDY falling edges via the libgpiod 1.x API (python3-libgpiod on Raspberry Pi OS Bookworm)."""
+    """libgpiod 1.x API: python3-libgpiod on Raspberry Pi OS Bookworm."""
 
     def __init__(self, gpiod, gpio: int, chip: Optional[str]):
         line = gpiod.find_line(f"GPIO{gpio}") if chip is None else None
-        if line is None:
+        if not line:
             line = gpiod.Chip(chip or "gpiochip0").get_line(gpio)
         line.request(consumer="pieeg-clicker", type=gpiod.LINE_REQ_EV_FALLING_EDGE)
         self._line = line
-        logger.info("DRDY on %s line %d", line.owner().name(), line.offset())
+        logger.info("DRDY on %s line %d (libgpiod 1)", line.owner().name(), line.offset())
 
     def wait(self, timeout_s: float) -> int:
         sec = int(timeout_s)
@@ -93,11 +104,43 @@ class _DrdyV1:
         self._line.release()
 
 
+class _DrdyCxx:
+    """PyPI gpiod 1.5.x (python3-gpiod by hhk7734), which PiEEG's quick-start installs."""
+
+    def __init__(self, gpiod, gpio: int, chip: Optional[str]):
+        line = gpiod.find_line(f"GPIO{gpio}") if chip is None else None
+        if not line:
+            line = gpiod.chip(chip or "gpiochip0").get_line(gpio)
+        request = gpiod.line_request()
+        request.consumer = "pieeg-clicker"
+        request.request_type = gpiod.line_request.EVENT_FALLING_EDGE
+        line.request(request)
+        self._line = line
+        logger.info("DRDY on line %d (gpiod 1.5)", line.offset())
+
+    def wait(self, timeout_s: float) -> int:
+        if not self._line.event_wait(timedelta(seconds=timeout_s)):
+            return 0
+        edges = 0
+        while True:  # drain queued events: no event_read_multiple() in this package
+            self._line.event_read()
+            edges += 1
+            if not self._line.event_wait(timedelta(0)):
+                return edges
+
+    def close(self) -> None:
+        self._line.release()
+
+
 def open_drdy(gpio: int, chip: Optional[str]):
     gpiod = _import_gpiod()
     if hasattr(gpiod, "request_lines"):
         return _DrdyV2(gpiod, gpio, chip)
-    return _DrdyV1(gpiod, gpio, chip)
+    if hasattr(gpiod, "LINE_REQ_EV_FALLING_EDGE"):
+        return _DrdyV1(gpiod, gpio, chip)
+    if hasattr(gpiod, "line_request"):
+        return _DrdyCxx(gpiod, gpio, chip)
+    raise RuntimeError(f"Unrecognised gpiod module {getattr(gpiod, '__file__', gpiod)!r}")
 
 
 class PiEEG:
@@ -110,11 +153,16 @@ class PiEEG:
         self.fs = hw.sample_rate
         self.block_size = hw.block_size
         self.full_scale_uv = VREF / hw.gain * 1e6
+        # Datasheet LSB = VREF / gain / 2^23 (0.536 µV at gain 1). PiEEG's example scripts
+        # use 4.5e6 / 16777215 (half of that); calibration makes the difference irrelevant.
         self._uv_per_lsb = VREF / hw.gain / (2 ** 23 - 1) * 1e6
         self._spi = None
         self._drdy = None
+        self._last: Optional[np.ndarray] = None
+        self._held = 0
         self.missed = 0      # samples lost because we were too slow
         self.bad_frames = 0  # frames without the 0b1100 status header
+        self.glitches = 0    # frames replaced because of an impossible jump
 
     # --- low-level SPI -------------------------------------------------------------
     def _command(self, opcode: int) -> None:
@@ -184,8 +232,18 @@ class PiEEG:
             self.missed += edges - 1
             sample = self._decode(self._spi.readbytes(FRAME_BYTES))
             if sample is not None:
-                rows.append(sample)
+                rows.append(self._deglitch(sample))
         return np.array(rows)
+
+    def _deglitch(self, sample: np.ndarray) -> np.ndarray:
+        """Hold the previous sample over a corrupted frame; accept a real step after 3 frames."""
+        if self._last is not None and self._held < 2 and np.abs(sample - self._last).max() > MAX_JUMP_UV:
+            self._held += 1
+            self.glitches += 1
+            return self._last
+        self._held = 0
+        self._last = sample
+        return sample
 
     def _decode(self, frame) -> Optional[np.ndarray]:
         b = np.frombuffer(bytes(frame), dtype=np.uint8)
@@ -208,5 +266,7 @@ class PiEEG:
         if self._drdy is not None:
             self._drdy.close()
             self._drdy = None
-        if self.missed or self.bad_frames:
-            logger.info("Lost %d samples, dropped %d malformed frames", self.missed, self.bad_frames)
+        if self.missed or self.bad_frames or self.glitches:
+            logger.info("Lost %d samples, dropped %d malformed and %d glitched frames "
+                        "(many? add core_freq_fixed=1 to /boot/firmware/config.txt or lower spi_speed_hz)",
+                        self.missed, self.bad_frames, self.glitches)

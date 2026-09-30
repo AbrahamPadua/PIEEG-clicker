@@ -107,9 +107,10 @@ class UinputBackend:
         self._ev_key = ecodes.EV_KEY
         self._codes = {key: getattr(ecodes, EVDEV_NAMES.get(key, "KEY_" + key.upper()))
                        for key in SUPPORTED_KEYS}
+        # Key codes 1-31 too: udev only tags devices having all of them as ID_INPUT_KEYBOARD.
+        capabilities = sorted(set(range(1, 32)) | set(self._codes.values()))
         try:
-            self._ui = evdev.UInput(events={self._ev_key: sorted(self._codes.values())},
-                                    name="PiEEG Receiver")
+            self._ui = evdev.UInput(events={self._ev_key: capabilities}, name="PiEEG Receiver")
         except (OSError, evdev.UInputError) as exc:  # UInputError is not an OSError
             raise RuntimeError(
                 f"cannot create the uinput device: {exc}\nIt needs write access to /dev/uinput: "
