@@ -1,0 +1,17 @@
+# PiEEG Clicker: let members of the "input" group use /dev/uinput.
+#
+# The "uinput" output mode creates a virtual keyboard through /dev/uinput, which is
+# root-only by default. This rule gives the "input" group read/write access so the
+# clicker does not have to run as root.
+#
+# Install (once, on the Raspberry Pi):
+#   sudo cp extras/99-pieeg-uinput.rules /etc/udev/rules.d/
+#   sudo udevadm control --reload-rules && sudo udevadm trigger
+#   sudo usermod -aG input $USER          # then log out and back in
+#
+# The uinput kernel module must be loaded too:
+#   sudo modprobe uinput                                  # right now
+#   echo uinput | sudo tee /etc/modules-load.d/uinput.conf   # at every boot
+#
+# Check with:  ls -l /dev/uinput   (expect: crw-rw---- root input)  and  id -nG | grep input
+KERNEL=="uinput", SUBSYSTEM=="misc", GROUP="input", MODE="0660", OPTIONS+="static_node=uinput"

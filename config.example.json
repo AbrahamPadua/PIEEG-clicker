@@ -1,0 +1,67 @@
+{
+  "hardware": {
+    "spi_bus": 0,
+    "spi_device": 0,
+    "spi_speed_hz": 1000000,
+    "drdy_gpio": 26,
+    "gpiochip": null,
+    "sample_rate": 250,
+    "gain": 1,
+    "block_size": 10
+  },
+  "blink": {
+    "channels": [
+      1,
+      2
+    ],
+    "lowpass_hz": 10.0,
+    "polarity": 1,
+    "threshold_uv": null,
+    "min_threshold_uv": 80.0,
+    "adaptive_k": 6.0,
+    "min_duration_s": 0.05,
+    "max_duration_s": 0.6,
+    "max_amplitude_uv": 2000.0
+  },
+  "clench": {
+    "channels": [
+      1,
+      2
+    ],
+    "band_hz": [
+      20.0,
+      100.0
+    ],
+    "notch_hz": [
+      50.0,
+      60.0
+    ],
+    "threshold_uv": null,
+    "min_threshold_uv": 25.0,
+    "adaptive_k": 5.0,
+    "min_hold_s": 0.4,
+    "gate_blinks": true
+  },
+  "gestures": {
+    "min_gap_s": 0.2,
+    "max_gap_s": 0.7,
+    "cooldown_s": 1.0,
+    "min_relative_amplitude": 0.5
+  },
+  "output": {
+    "mode": "udp",
+    "host": "255.255.255.255",
+    "port": 5005,
+    "token": ""
+  },
+  "mapping": {
+    "double_blink": "next",
+    "triple_blink": "previous",
+    "clench": null
+  },
+  "keys": {
+    "next": "page_down",
+    "previous": "page_up",
+    "blank": "b"
+  }
+}

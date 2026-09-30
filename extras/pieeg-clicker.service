@@ -1,0 +1,28 @@
+# Installation instructions:
+# 1. Replace YOUR_USER with your actual username (e.g., pi)
+# 2. Replace /home/YOUR_USER/PIEEG-clicker with the actual repo path if different
+# 3. Run:
+#    sudo cp extras/pieeg-clicker.service /etc/systemd/system/
+#    sudo systemctl daemon-reload
+#    sudo systemctl enable --now pieeg-clicker
+#    journalctl -u pieeg-clicker -f  (to view logs)
+#
+# Note: This service expects the config at /home/YOUR_USER/.config/pieeg-clicker/config.json
+#       Create it by running: python3 -m pieeg_clicker calibrate
+
+[Unit]
+Description=PiEEG blink presentation clicker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=YOUR_USER
+WorkingDirectory=/home/YOUR_USER/PIEEG-clicker
+ExecStart=/usr/bin/python3 -m pieeg_clicker run -c /home/YOUR_USER/.config/pieeg-clicker/config.json
+Restart=on-failure
+RestartSec=3
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

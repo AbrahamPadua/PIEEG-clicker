@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pieeg-clicker"
+version = "0.1.0"
+description = "Hands-free presentation clicker driven by eye blinks (and optional jaw clenches) measured with a PiEEG"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = ["numpy", "scipy"]
+
+[project.optional-dependencies]
+pi = ["spidev", "gpiod"]
+uinput = ["evdev"]
+test = ["pytest"]
+
+[project.scripts]
+pieeg-clicker = "pieeg_clicker.cli:main"
+
+[tool.setuptools]
+packages = ["pieeg_clicker"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
