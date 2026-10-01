@@ -11,7 +11,7 @@ requires-python = ">=3.9"
 dependencies = ["numpy", "scipy"]
 
 [project.optional-dependencies]
-pi = ["spidev", "gpiod"]
+pi = ["spidev", "gpiod>=2.0.2,<3"]
 uinput = ["evdev"]
 test = ["pytest"]
 

@@ -93,13 +93,25 @@ git clone https://github.com/AbrahamPadua/PIEEG-clicker.git
 cd PIEEG-clicker
 ```
 
-Everything runs from the checkout with `python3 -m pieeg_clicker ...`; nothing needs installing with pip.
+With the system Python and the apt packages above, everything runs from the checkout with `python3 -m pieeg_clicker ...`; nothing needs installing with pip.
 
-- **gpiod.** `python3-libgpiod` is the libgpiod 2.x API on Trixie and the 1.x API on Bookworm. The driver supports both, and also the old PyPI `gpiod` 1.5.x that PiEEG's quick-start installs (`pip install gpiod==1.5.4`), so the apt route above is the recommended one. PyPI `gpiod` 2.x is not needed and has no 32-bit ARM wheel, so it would have to be compiled.
+- **gpiod.** The driver supports the system libgpiod 1.x and 2.x APIs. For pip or Conda, the `pi` extra requires the official `gpiod>=2.0.2,<3` bindings. The older, unofficial PyPI `gpiod` 1.5.x API remains supported for existing installations, but its GPIO discovery can fail on newer Pi kernels; use the official bindings on Pi 5. See the [gpiod package's migration note](https://pypi.org/project/gpiod/#breaking-changes).
 - **GPIO lines.** The driver finds the ADS1299 data-ready line (GPIO26), and PiEEG-16's additional GPIO13/GPIO19 lines, by name on both the Pi 4 and the Pi 5. On the Pi 5 the header's GPIO chip number has changed between kernel releases (gpiochip4 on early kernels, gpiochip0 later), which is why it does not rely on a chip number. Set `hardware.gpiochip` (for example `"/dev/gpiochip0"`) only if that lookup fails.
 - **Permissions.** The default Pi user is already in the `spi`, `gpio` and `input` groups, so the clicker runs without `sudo`.
 - **Optional `pieeg-clicker` command.** Inside a virtual environment that can see the apt packages: `python3 -m venv --system-site-packages .venv`, then `. .venv/bin/activate` and `pip install -e .`.
-- **Optional: Pi-local `uinput` output** (the Pi types the keys itself; see [Safety](#safety) first):
+
+For an existing Conda environment, install dependencies into that environment instead of using the system Python packages:
+
+```bash
+conda activate pieeg
+cd ~/PIEEG-clicker
+python -m pip install -e ".[pi]"
+python -m pieeg_clicker monitor
+```
+
+Stop the PiEEG server before starting the clicker: both programs need exclusive access to the board. Use `python` for all clicker commands while this environment is active. To update an existing checkout, run `git pull --ff-only` before reinstalling the `pi` extra.
+
+**Optional: Pi-local `uinput` output** (the Pi types the keys itself; see [Safety](#safety) first):
 
 ```bash
 sudo apt install python3-evdev
@@ -304,6 +316,7 @@ journalctl -u pieeg-clicker -f        # follow the log
 | Missed clicks | Recalibrate, check contact with `monitor`, and blink a bit faster (both blinks within 0.7 s) and more firmly. |
 | Calibration: `Only N/6 prompted blinks were found` | The forehead electrodes are not touching the skin, or `blink.channels` does not match your wiring. Check with `monitor` and retry. |
 | Calibration: a jaw clench "barely exceeds talking" | Clench harder, add temple electrodes (`clench.channels`), or leave `clench` unmapped. |
+| `[Errno 25] ... error creating GPIO chip iterator` | The older, unofficial PyPI `gpiod` package failed during GPIO discovery. In the active Conda or virtual environment, run `python -m pip install --upgrade "gpiod>=2.0.2,<3"`, then retry `monitor`. Check the loaded API with `python -c "import gpiod; print(gpiod.__file__); print(hasattr(gpiod, 'request_lines'))"`; the last line should be `True`. |
 | The receiver gets nothing | Pi and laptop must be on the same network, the laptop's firewall must allow inbound UDP 5005, and the token must match (the receiver prints "wrong or missing token"). Venue Wi-Fi may isolate clients from each other: use a phone hotspot. Put the laptop's IP in `--host` instead of relying on broadcast. To test the path without electrodes, use `run --simulate` (see [Try it without hardware](#try-it-without-hardware)). |
 | The receiver prints the key but the slides do not move | The slideshow window must have focus. Also see the platform notes above: macOS Accessibility permission, a slideshow running as Administrator on Windows, `--backend uinput` on Wayland. |
 | `cannot create the uinput virtual keyboard` (Pi) or `cannot create the uinput device` (receiver) | Load the module (`sudo modprobe uinput`), install `extras/99-pieeg-uinput.rules` and join the `input` group, then log out and in again. |
