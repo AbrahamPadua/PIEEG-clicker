@@ -10,7 +10,10 @@ from unittest.mock import Mock, call, patch
 
 import numpy as np
 
+from pieeg_clicker.calibrate import analyse, record
+from pieeg_clicker.cli import open_source
 from pieeg_clicker.config import Config, HardwareConfig
+from pieeg_clicker.detectors import GestureEngine
 from pieeg_clicker import pieeg
 
 
@@ -304,6 +307,31 @@ class ConfigurationTests(unittest.TestCase):
         self.assertEqual(loaded.hardware.drdy_gpio_2, 13)
         self.assertEqual(loaded.hardware.cs_gpio_2, 19)
 
+    def test_sixteen_channel_simulation_and_calibration_use_second_bank(self):
+        cfg = Config()
+        cfg.hardware.n_channels = 16
+        cfg.blink.channels = cfg.clench.channels = [9, 10]
+        cfg.blink.threshold_uv = 150
+        cfg.validate()
+        source = open_source(cfg, simulate=True)
+        source.realtime = False
+        source.rng = np.random.default_rng(7)
+        engine = GestureEngine(cfg, source.fs, source.n_channels)
+        actions = []
+        for _ in range(30 * source.fs // source.block_size):
+            block = source.read()
+            self.assertEqual(block.shape, (source.block_size, 16))
+            actions.extend(event.action for event in engine.process(block) if event.action)
+        self.assertIn("next", actions)
+        self.assertIn("previous", actions)
+        source = open_source(cfg, simulate=True, demo=False)
+        source.realtime = False
+        source.rng = np.random.default_rng(3)
+        recording, script = record(source, cfg, with_clench=False, say=lambda _: None)
+        calibrated, _ = analyse(recording, script, cfg)
+        self.assertEqual(calibrated.hardware.n_channels, 16)
+        self.assertEqual(calibrated.blink.channels, [9, 10])
+        self.assertGreater(calibrated.blink.threshold_uv, 100)
 
 
 if __name__ == "__main__":

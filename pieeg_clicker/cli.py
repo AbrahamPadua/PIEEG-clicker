@@ -20,7 +20,8 @@ logger = logging.getLogger("pieeg_clicker")
 def open_source(cfg: Config, simulate: bool, demo: bool = True):
     if simulate:
         from .simulate import SyntheticSource
-        return SyntheticSource(fs=cfg.hardware.sample_rate, block_size=cfg.hardware.block_size, demo=demo)
+        return SyntheticSource(fs=cfg.hardware.sample_rate, block_size=cfg.hardware.block_size,
+                               n_channels=cfg.hardware.n_channels, demo=demo)
     from .pieeg import PiEEG
     return PiEEG(cfg.hardware)
 

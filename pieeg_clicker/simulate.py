@@ -26,7 +26,14 @@ class SyntheticSource:
     full_scale_uv = 4.5e6
 
     def __init__(self, fs: int = 250, block_size: int = 10, realtime: bool = True,
-                 demo: bool = True, demo_every_s: float = 6.0, seed=None):
+                 demo: bool = True, demo_every_s: float = 6.0, seed=None, n_channels: int = 8):
+        if n_channels not in (8, 16):
+            raise ValueError("n_channels must be 8 or 16")
+        self.n_channels = n_channels
+        # Repeat the demo montage for chip 2, so inputs 9/10 can also test the detector.
+        self._blink_weights = np.tile(BLINK_WEIGHTS, n_channels // 8)
+        self._emg_weights = np.tile(EMG_WEIGHTS, n_channels // 8)
+        self._alpha_weights = np.tile([2, 2, 2, 2, 3, 3, 6, 6], n_channels // 8)
         self.fs = fs
         self.block_size = block_size
         self.realtime = realtime
@@ -56,7 +63,7 @@ class SyntheticSource:
         t = (i + np.arange(n)) / self.fs
         noise = self.rng.normal(0.0, 41.0, (n, self.n_channels))
         x = self._eeg(noise) + self.rng.normal(0.0, 2.0, (n, self.n_channels))
-        x += np.outer(6.0 * np.sin(2 * np.pi * 10.0 * t), [2, 2, 2, 2, 3, 3, 6, 6]) / 6.0  # alpha
+        x += np.outer(6.0 * np.sin(2 * np.pi * 10.0 * t), self._alpha_weights) / 6.0  # alpha
         x += 3.0 * np.sin(2 * np.pi * 50.0 * t)[:, None]  # mains hum
         self._drift += self.rng.normal(0.0, 0.3, self.n_channels) * np.sqrt(n)
         x += self._offsets + self._drift
@@ -90,7 +97,7 @@ class SyntheticSource:
         dur = self.rng.uniform(0.30, 0.40) if deliberate else self.rng.uniform(0.20, 0.30)
         length = int(dur * self.fs)
         shape = np.sin(np.pi * np.arange(length) / length) ** 2
-        self._add(start, np.outer(amp * shape, BLINK_WEIGHTS * self.rng.uniform(0.9, 1.1, self.n_channels)))
+        self._add(start, np.outer(amp * shape, self._blink_weights * self.rng.uniform(0.9, 1.1, self.n_channels)))
 
     def _pattern(self, start: int, count: int) -> None:
         for _ in range(count):
@@ -104,12 +111,12 @@ class SyntheticSource:
         burst = sosfilt(self._emg_band, white, axis=0)[pad:]
         burst *= rms / burst.std()
         ramp = np.minimum(1.0, np.minimum(np.arange(length), np.arange(length)[::-1]) / (0.05 * self.fs))
-        self._add(start, burst * ramp[:, None] * EMG_WEIGHTS)
+        self._add(start, burst * ramp[:, None] * self._emg_weights)
 
     def _clench(self, start: int) -> None:
         self._emg_burst(start, self.rng.uniform(0.9, 1.3), rms=self.rng.uniform(50, 80))
         length = int(0.6 * self.fs)  # jaw movement also shifts the electrodes a little
-        self._add(start, np.outer(25.0 * np.sin(np.pi * np.arange(length) / length), EMG_WEIGHTS))
+        self._add(start, np.outer(25.0 * np.sin(np.pi * np.arange(length) / length), self._emg_weights))
 
     def _talk(self, start: int, duration_s: float) -> None:
         t = start
@@ -126,7 +133,7 @@ class SyntheticSource:
         wave = np.full(down + 2 * ramp, -amp)
         wave[:ramp] = np.linspace(0, -amp, ramp)
         wave[-ramp:] = np.linspace(-amp, 0, ramp)
-        self._add(start, np.outer(wave, BLINK_WEIGHTS))
+        self._add(start, np.outer(wave, self._blink_weights))
 
     def _schedule(self, end: int) -> None:
         while self._next_blink < end:
