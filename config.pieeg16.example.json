@@ -1,0 +1,11 @@
+{
+  "hardware": {
+    "n_channels": 16
+  },
+  "blink": {
+    "channels": [1, 2]
+  },
+  "clench": {
+    "channels": [1, 2]
+  }
+}

@@ -7,7 +7,11 @@
     "gpiochip": null,
     "sample_rate": 250,
     "gain": 1,
-    "block_size": 10
+    "block_size": 10,
+    "n_channels": 8,
+    "spi_device_2": 1,
+    "drdy_gpio_2": 13,
+    "cs_gpio_2": 19
   },
   "blink": {
     "channels": [

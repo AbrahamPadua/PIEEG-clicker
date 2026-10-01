@@ -29,8 +29,12 @@ class HardwareConfig:
     drdy_gpio: int = 26               # BCM number of the ADS1299 DRDY line (header pin 37)
     gpiochip: Optional[str] = None    # e.g. "/dev/gpiochip0"; None = find the chip owning "GPIO<drdy_gpio>"
     sample_rate: int = 250            # ADS1299 data rate (SPS)
-    gain: int = 1                     # PGA gain applied to all 8 channels
+    gain: int = 1                     # PGA gain applied to every channel
     block_size: int = 10              # samples per processing block (10 @ 250 SPS = 40 ms)
+    n_channels: int = 8               # PiEEG-8: 8; PiEEG-16: 16
+    spi_device_2: int = 1             # second ADS1299: /dev/spidev0.1
+    drdy_gpio_2: int = 13             # second ADS1299 DRDY (header pin 33)
+    cs_gpio_2: int = 19               # second ADS1299 chip select (header pin 35)
 
 
 @dataclass
@@ -110,13 +114,20 @@ class Config:
 
     def validate(self) -> None:
         hw = self.hardware
+        if type(hw.n_channels) is not int or hw.n_channels not in (8, 16):
+            raise ValueError("hardware.n_channels must be 8 (PiEEG-8) or 16 (PiEEG-16)")
+        if hw.n_channels == 16:
+            if hw.spi_device_2 == hw.spi_device:
+                raise ValueError("hardware.spi_device_2 must differ from hardware.spi_device")
+            if len({hw.drdy_gpio, hw.drdy_gpio_2, hw.cs_gpio_2}) != 3:
+                raise ValueError("hardware.drdy_gpio, drdy_gpio_2 and cs_gpio_2 must be different")
         if hw.sample_rate not in DATA_RATES:
             raise ValueError(f"hardware.sample_rate must be one of {DATA_RATES}")
         if hw.gain not in GAINS:
             raise ValueError(f"hardware.gain must be one of {GAINS}")
         for name, chans in (("blink", self.blink.channels), ("clench", self.clench.channels)):
-            if not chans or any(not 1 <= c <= 8 for c in chans):
-                raise ValueError(f"{name}.channels must be PiEEG inputs 1..8, got {chans}")
+            if not chans or any(type(c) is not int or not 1 <= c <= hw.n_channels for c in chans):
+                raise ValueError(f"{name}.channels must be PiEEG inputs 1..{hw.n_channels}, got {chans}")
         if self.blink.polarity not in (1, -1):
             raise ValueError("blink.polarity must be 1 or -1")
         lo, hi = self.clench.band_hz
