@@ -1,6 +1,6 @@
 # PiEEG Clicker
 
-A hands-free presentation clicker for the PiEEG, the 8-channel ADS1299 EEG shield for the Raspberry Pi. Blink twice to go to the next slide and three times to go back; an optional jaw clench can trigger a third action. Everything is detected on the Pi from two forehead electrodes. The Pi sends the key presses over Wi-Fi to a small receiver on the presenting laptop, which presses PgDn and PgUp by default, like commercial clickers.
+A hands-free presentation clicker for the PiEEG-8 and PiEEG-16 ADS1299 EEG shields for the Raspberry Pi. Blink twice to go to the next slide and three times to go back; an optional jaw clench can trigger a third action. Everything is detected on the Pi from two forehead electrodes. The Pi sends the key presses over Wi-Fi to a small receiver on the presenting laptop, which presses PgDn and PgUp by default, like commercial clickers.
 
 ```
 electrodes -> PiEEG + Raspberry Pi (battery) -- Wi-Fi (UDP) --> receiver on the laptop -> PgDn / PgUp -> slides
@@ -46,7 +46,7 @@ This is why the default output is Wi-Fi (UDP) to the laptop: there is no cable b
 
 ## Hardware setup
 
-You need a PiEEG-8 on a Raspberry Pi 4 or 5, a 5 V power bank, two forehead electrodes and two ear clips, and a Wi-Fi network that the Pi and the laptop share (a phone hotspot works). Seat the shield on the Pi's 40-pin header, then connect the electrodes following PiEEG's standard montage:
+You need a PiEEG-8 or PiEEG-16 on a Raspberry Pi 4 or 5, a 5 V power bank suitable for your Pi, two forehead electrodes and two ear clips, and a Wi-Fi network that the Pi and the laptop share (a phone hotspot works). With the Pi powered off, seat the shield on its 40-pin header, then connect the electrodes following PiEEG's standard montage:
 
 | PiEEG input | Electrode | Used for |
 |---|---|---|
@@ -54,11 +54,33 @@ You need a PiEEG-8 on a Raspberry Pi 4 or 5, a 5 V power bank, two forehead elec
 | CH2 | Fp2: forehead, just above the right eyebrow | Blinks, and jaw clench by default |
 | REF | Ear clip, left earlobe | Reference |
 | BIAS | Ear clip, right earlobe | Noise cancellation |
-| CH3-CH8 | Optional | For example the temples, for a stronger clench signal |
+| Remaining channels | Optional | For example the temples, for a stronger clench signal |
 
 PiEEG's docs only say REF on one ear and BIAS on the other; which side is which is a convention here.
 
 Blinks show up as positive peaks with this montage. If yours are reversed, `calibrate` detects that and sets `blink.polarity` for you. For a stronger jaw-clench signal, add electrodes over the temples (the temporalis muscle) and list their input numbers in `clench.channels`; by default the clench detector reuses inputs 1 and 2.
+
+### PiEEG-16 on Raspberry Pi 5
+
+The default configuration selects PiEEG-8. **For a PiEEG-16 board, set `hardware.n_channels` to `16` before using real hardware.** From the updated project folder on the Pi:
+
+```bash
+mkdir -p ~/.config/pieeg-clicker
+cp -n config.pieeg16.example.json ~/.config/pieeg-clicker/config.json
+```
+
+`cp -n` preserves an existing config. If you already calibrated or configured this project, edit that existing JSON file and add `"n_channels": 16` inside `"hardware"` instead. The example assumes Fp1/Fp2 connect to inputs 1/2. With a cap, check its cable-to-input numbering and change `blink.channels` to the actual frontal inputs; wearing 16 electrodes does not establish that mapping. REF and BIAS remain required. Only the two selected frontal inputs drive the blink detector; all 16 are shown by `monitor`.
+
+PiEEG-16 uses two separate ADS1299 chips, following the [manufacturer's driver](https://github.com/pieeg-club/PiEEG-server/blob/main/pieeg_server/hardware.py):
+
+| Channels | SPI device | Data-ready GPIO | Chip select |
+|---|---|---|---|
+| 1-8 | `/dev/spidev0.0` | BCM26 (header pin 37) | Hardware CE0 |
+| 9-16 | `/dev/spidev0.1` | BCM13 (header pin 33) | BCM19 (header pin 35) |
+
+The shield makes these connections through the header; no extra jumper wires are needed for the standard board. The driver locates each GPIO by name on Pi 5, configures both chips, and combines their separate 27-byte frames in channel order. It is covered by mocked SPI/GPIO tests and synthetic 16-channel checks; real PiEEG-16/Pi 5 acquisition still needs testing on your board.
+
+After completing the software and laptop setup below, start with `run --simulate` to check the Wi-Fi path with electrodes off, then use `monitor`, `calibrate --skip-clench`, and `run --host <laptop-ip> --token <shared-secret>`. Calibration saves the selected 16-channel setting along with your thresholds. The systemd service uses the same saved config.
 
 ## Software setup on the Pi
 
@@ -74,7 +96,7 @@ cd PIEEG-clicker
 Everything runs from the checkout with `python3 -m pieeg_clicker ...`; nothing needs installing with pip.
 
 - **gpiod.** `python3-libgpiod` is the libgpiod 2.x API on Trixie and the 1.x API on Bookworm. The driver supports both, and also the old PyPI `gpiod` 1.5.x that PiEEG's quick-start installs (`pip install gpiod==1.5.4`), so the apt route above is the recommended one. PyPI `gpiod` 2.x is not needed and has no 32-bit ARM wheel, so it would have to be compiled.
-- **DRDY line.** The driver finds the ADS1299 data-ready line (GPIO26) by its name on both the Pi 4 and the Pi 5. On the Pi 5 the header's GPIO chip number has changed between kernel releases (gpiochip4 on early kernels, gpiochip0 later), which is why it does not rely on a chip number. Set `hardware.gpiochip` (for example `"/dev/gpiochip0"`) only if that lookup fails.
+- **GPIO lines.** The driver finds the ADS1299 data-ready line (GPIO26), and PiEEG-16's additional GPIO13/GPIO19 lines, by name on both the Pi 4 and the Pi 5. On the Pi 5 the header's GPIO chip number has changed between kernel releases (gpiochip4 on early kernels, gpiochip0 later), which is why it does not rely on a chip number. Set `hardware.gpiochip` (for example `"/dev/gpiochip0"`) only if that lookup fails.
 - **Permissions.** The default Pi user is already in the `spi`, `gpio` and `input` groups, so the clicker runs without `sudo`.
 - **Optional `pieeg-clicker` command.** Inside a virtual environment that can see the apt packages: `python3 -m venv --system-site-packages .venv`, then `. .venv/bin/activate` and `pip install -e .`.
 - **Optional: Pi-local `uinput` output** (the Pi types the keys itself; see [Safety](#safety) first):
@@ -185,7 +207,7 @@ Settings live in a JSON file: `~/.config/pieeg-clicker/config.json` (or under `$
 | `output.host` | `"255.255.255.255"` | Laptop IP address. The broadcast default needs no setup, but the laptop's own IP is more reliable |
 | `output.port` | `5005` | UDP port; must match the receiver's `--port` |
 | `output.token` | `""` | Shared secret; must match the receiver's `--token` |
-| `blink.channels` | `[1, 2]` | PiEEG inputs (1-8) wired to Fp1/Fp2 |
+| `blink.channels` | `[1, 2]` | PiEEG inputs wired to Fp1/Fp2: 1-8 on PiEEG-8, 1-16 on PiEEG-16 |
 | `blink.threshold_uv` | `null` | Set by `calibrate`. Until then 80 µV is used; it never drops below 6 times the measured noise. Raise it for fewer false blinks |
 | `blink.polarity` | `1` | `1` if blinks are positive peaks, `-1` if reversed; set by `calibrate` |
 | `clench.channels` | `[1, 2]` | Inputs used for the jaw EMG, for example temple electrodes |
@@ -194,6 +216,10 @@ Settings live in a JSON file: `~/.config/pieeg-clicker/config.json` (or under `$
 | `gestures.max_gap_s` | `0.7` | Longest pause between the blinks of one pattern |
 | `gestures.cooldown_s` | `1.0` | Dead time after every action |
 | `hardware.spi_speed_hz` | `1000000` | SPI clock; lower it (for example 600000) if you see glitched frames |
+| `hardware.n_channels` | `8` | Board selection: `8` for PiEEG-8, `16` for PiEEG-16 |
+| `hardware.spi_device_2` | `1` | SPI device for channels 9-16, on the same bus as chip 1 |
+| `hardware.drdy_gpio_2` | `13` | BCM number of chip 2's data-ready line (header pin 33) |
+| `hardware.cs_gpio_2` | `19` | BCM number of chip 2's active-low chip-select line (header pin 35) |
 | `hardware.drdy_gpio` | `26` | BCM number of the ADS1299 DRDY line (header pin 37) |
 | `hardware.gpiochip` | `null` | GPIO chip holding that line; `null` finds it by the name `GPIO26`. Set it (for example `"/dev/gpiochip0"`) only if the lookup fails |
 
@@ -219,10 +245,12 @@ The clench is silent because it is unmapped by default (`-v` shows it). To test 
 
 Tests: `python3 -m pytest` from the repository root (needs pytest: `sudo apt install python3-pytest` or `pip install pytest`). Two quick synthetic end-to-end checks: the demo gestures give the right actions while natural blinking, glances and talking give none, and calibration separates natural from deliberate blinks and detects reversed polarity.
 
+The hardware checks in `tests/test_pieeg.py` cover both board modes, signed channel ordering, corrupt frames, chip 2 timeouts, resource cleanup, and the three supported GPIO APIs. They also exercise 16-channel simulation and calibration using inputs 9/10. Run these without pytest with `python3 -m unittest discover -s tests -p test_pieeg.py`.
+
 ## How it works
 
 ```
-PiEEG: ADS1299 at 250 SPS, read over SPI (DRDY falling edge = new sample)
+PiEEG: one or two ADS1299 chips at 250 SPS, read over SPI (DRDY falling edge = new sample)
   |
   +--> blink path:  mean of blink.channels -> 10 Hz low-pass -> peak/valley detector
   |                 -> pattern grouping (double / triple blink)
@@ -269,8 +297,8 @@ journalctl -u pieeg-clicker -f        # follow the log
 
 | Symptom | What to do |
 |---|---|
-| `No answer from the ADS1299 (ID register = 0x00/0xFF)` | SPI is not enabled (`sudo raspi-config nonint do_spi 0`, then reboot), the board is not fully seated on the 40-pin header, or the battery is off. |
-| `No data from the PiEEG for 1 s` | The DRDY line is not toggling. Check the board's power, `hardware.drdy_gpio` (26) and, if the automatic lookup failed, `hardware.gpiochip`. |
+| `No answer from ADS1299 chip 1/2 (ID register = 0x00/0xFF)` | SPI is not enabled (`sudo raspi-config nonint do_spi 0`, then reboot), the board is not fully seated on the 40-pin header, or the battery is off. For chip 2, also check `/dev/spidev0.1`, GPIO19 and that your board is PiEEG-16. |
+| `No data from PiEEG chip 1/2 for 1 s` | The DRDY line is not toggling. Check the board's power, `hardware.drdy_gpio` (26), chip 2's `hardware.drdy_gpio_2` (13) and, if the automatic lookup failed, `hardware.gpiochip`. |
 | A message about lost, malformed or glitched frames when you stop the program | SPI glitches (a few are harmless). Add `core_freq_fixed=1` to `/boot/firmware/config.txt` and reboot (on a Pi 4 the SPI clock follows the core clock), or lower `hardware.spi_speed_hz`, for example to 600000, the rate PiEEG's own scripts use. |
 | Clicks you did not intend | Recalibrate and blink more firmly on purpose, which widens the gap to your natural blinks. Raise `blink.threshold_uv`. Or set `mapping.triple_blink` to `null`, so a double blink fires at once and can never turn into a "previous". `-v` shows every detected blink. |
 | Missed clicks | Recalibrate, check contact with `monitor`, and blink a bit faster (both blinks within 0.7 s) and more firmly. |
@@ -288,7 +316,7 @@ pieeg_clicker/                the package
   __main__.py                 python3 -m pieeg_clicker entry point
   cli.py                      commands: run, monitor, calibrate, init-config
   config.py                   settings, defaults, JSON load/save, validation
-  pieeg.py                    ADS1299 driver (spidev + libgpiod)
+  pieeg.py                    PiEEG-8/16 ADS1299 driver (spidev + libgpiod)
   dsp.py                      streaming filters and robust noise statistics
   detectors.py                blink and clench detectors, blink patterns, gesture engine
   calibrate.py                guided calibration
@@ -298,7 +326,9 @@ receiver/pieeg_receiver.py    standalone laptop receiver (UDP to key presses)
 extras/pieeg-clicker.service  systemd unit for autostart
 extras/99-pieeg-uinput.rules  udev rule for the uinput output
 config.example.json           the default configuration
+config.pieeg16.example.json    PiEEG-16 configuration (frontal inputs 1/2)
 tests/test_detection.py       synthetic end-to-end tests
+tests/test_pieeg.py           mocked hardware and 16-channel checks
 pyproject.toml                packaging (optional): numpy, scipy
 ```
 
@@ -306,4 +336,5 @@ pyproject.toml                packaging (optional): numpy, scipy
 
 - **Why not BrainFlow?** BrainFlow has a PiEEG board (`PIEEG_BOARD`), but it only works when BrainFlow is compiled from source on the Pi with the periphery option (`--build-periphery`). This project talks to the ADS1299 directly instead, with the same register setup as PiEEG's official scripts, so the Pi only needs apt packages.
 - PiEEG project and documentation: <https://github.com/pieeg-club/PiEEG>
+- PiEEG-16 project and documentation: <https://github.com/pieeg-club/PiEEG-16>
 - TI ADS1299 datasheet (SBAS499): <https://www.ti.com/product/ADS1299>
