@@ -1,5 +1,8 @@
 """Minimal end-to-end checks on synthetic data (no hardware needed)."""
+from unittest.mock import patch
+
 from pieeg_clicker.calibrate import analyse, record
+from pieeg_clicker.cli import main
 from pieeg_clicker.config import Config
 from pieeg_clicker.detectors import GestureEngine
 from pieeg_clicker.simulate import SyntheticSource
@@ -43,3 +46,16 @@ def test_calibration_separates_natural_and_deliberate_blinks():
     assert new.blink.polarity == -1
     assert 120 < new.blink.threshold_uv < 220  # natural ~70-140 µV, deliberate ~220-350 µV
     assert 9 < new.clench.threshold_uv < 35    # talking ~5-10 µV, clench ~35-55 µV
+
+
+def test_simulated_calibration_is_not_saved(tmp_path):
+    path = tmp_path / "config.json"
+    path.write_text('{"blink": {"threshold_uv": 300.0}}')
+    calibrated = Config()
+    calibrated.blink.threshold_uv = 150.0
+    with patch("pieeg_clicker.calibrate.record", return_value=(None, [])), \
+            patch("pieeg_clicker.calibrate.analyse", return_value=(calibrated, [])):
+        assert main(["calibrate", "--simulate", "-c", str(path)]) == 0
+        assert Config.load(path).blink.threshold_uv == 300.0
+        assert main(["calibrate", "-c", str(path)]) == 0
+        assert Config.load(path).blink.threshold_uv == 150.0

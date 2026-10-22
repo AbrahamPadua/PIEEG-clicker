@@ -129,6 +129,9 @@ def cmd_calibrate(cfg: Config, args) -> int:
     rec, script = record(source, cfg, with_clench=not args.skip_clench)
     new, report = analyse(rec, script, cfg)
     print("\n" + "\n".join(report))
+    if args.simulate:
+        print("Simulated data: nothing saved.")
+        return 0
     new.save(args.config)
     print(f"Saved to {args.config}")
     return 0

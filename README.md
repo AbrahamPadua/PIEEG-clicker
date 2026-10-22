@@ -239,7 +239,7 @@ Key names: letters a-z, digits 0-9, `f1`-`f12`, `space`, `enter`, `escape`, `tab
 
 ## Try it without hardware
 
-`run`, `monitor` and `calibrate` all accept `--simulate`, which replaces the PiEEG with synthetic EEG: natural blinks and glances down at notes, plus a scripted double blink, triple blink and jaw clench every 6 s in turn. During `calibrate --simulate` the fake user also talks, blinks and clenches when prompted.
+`run`, `monitor` and `calibrate` all accept `--simulate`, which replaces the PiEEG with synthetic EEG: natural blinks and glances down at notes, plus a scripted double blink, triple blink and jaw clench every 6 s in turn. During `calibrate --simulate` the fake user also talks, blinks and clenches when prompted. The result is printed but not saved, so your real calibration stays.
 
 ```bash
 python3 -m pieeg_clicker run --simulate --output console
