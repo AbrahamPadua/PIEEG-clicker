@@ -130,6 +130,11 @@ class Config:
                 raise ValueError(f"{name}.channels must be PiEEG inputs 1..{hw.n_channels}, got {chans}")
         if self.blink.polarity not in (1, -1):
             raise ValueError("blink.polarity must be 1 or -1")
+        for name, thr in (("blink", self.blink.threshold_uv), ("clench", self.clench.threshold_uv)):
+            if thr is not None and (type(thr) not in (int, float) or thr <= 0):
+                raise ValueError(f"{name}.threshold_uv must be a positive number or null")
+        if hw.gpiochip is not None and type(hw.gpiochip) is not str:
+            raise ValueError('hardware.gpiochip must be a path such as "/dev/gpiochip0", or null')
         lo, hi = self.clench.band_hz
         if not 0 < lo < hi:
             raise ValueError("clench.band_hz must be [low, high] with 0 < low < high")
@@ -154,5 +159,8 @@ def _merge(obj: Any, data: Dict[str, Any], where: str) -> None:
             _merge(current, value, f"{where}.{key}")
         elif isinstance(current, dict) and isinstance(value, dict):
             current.update(value)
+        elif current is None or type(value) is type(current) or (type(current) is float and type(value) is int):
+            setattr(obj, key, value)  # fields that default to None are checked in validate()
         else:
-            setattr(obj, key, value)
+            kind = "an object" if is_dataclass(current) or isinstance(current, dict) else type(current).__name__
+            raise ValueError(f"{where}.{key} must be {kind}, got {value!r}")

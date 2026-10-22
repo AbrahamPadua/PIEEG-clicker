@@ -12,7 +12,7 @@ import numpy as np
 
 from pieeg_clicker.calibrate import analyse, record
 from pieeg_clicker.cli import open_source
-from pieeg_clicker.config import Config, HardwareConfig
+from pieeg_clicker.config import Config, HardwareConfig, _merge
 from pieeg_clicker.detectors import GestureEngine
 from pieeg_clicker import pieeg
 
@@ -291,6 +291,19 @@ class ConfigurationTests(unittest.TestCase):
         cfg.hardware.spi_device_2 = cfg.hardware.spi_device
         with self.assertRaisesRegex(ValueError, "must differ"):
             cfg.validate()
+
+    def test_values_of_the_wrong_type_are_rejected_at_load(self):
+        bad = {"max_gap_s": {"gestures": {"max_gap_s": "0.7"}},
+               "hardware": {"hardware": None},
+               "threshold_uv": {"blink": {"threshold_uv": "150"}}}
+        for field, data in bad.items():
+            cfg = Config()
+            with self.assertRaisesRegex(ValueError, field):
+                _merge(cfg, data, "config")
+                cfg.validate()
+        cfg = Config()
+        _merge(cfg, {"blink": {"min_threshold_uv": 80, "threshold_uv": 150}}, "config")
+        cfg.validate()  # whole numbers are fine where the default is a decimal
 
     def test_saved_configuration_keeps_sixteen_channel_selection(self):
         cfg = Config.load("config.pieeg16.example.json")
