@@ -29,3 +29,15 @@ def test_message_cannot_choose_the_key():
     receiver.handle(packet(2, "previous", key="enter"), HOST)
     receiver.handle(packet(3, "unknown", key="f4"), HOST)
     assert taps.keys == ["page_down", "left"]
+
+
+def test_wrong_token_duplicates_and_junk_are_ignored():
+    taps = Taps()
+    receiver = Receiver(taps, token="SOME-SECRET")
+    receiver.handle(packet(1, "next"), HOST)                    # no token
+    receiver.handle(packet(2, "next", token="guess"), HOST)     # wrong token
+    receiver.handle(packet(3, "next", token="SOME-SECRET"), HOST)
+    receiver.handle(packet(3, "next", token="SOME-SECRET"), HOST)  # the Pi sends every message twice
+    receiver.handle(b"\xff not json", HOST)
+    receiver.handle(b'{"app": "something-else", "v": 1, "action": "next"}', HOST)
+    assert taps.keys == ["page_down"]
