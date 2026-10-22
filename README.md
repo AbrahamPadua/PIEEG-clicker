@@ -281,7 +281,7 @@ laptop receiver: check token, drop the duplicate -> key press
 - **Pattern grouping.** Blinks up to 0.7 s apart form one pattern (blinks closer than 0.2 s count as one). A blink smaller than half of the biggest one in the pattern is ignored, so a small spontaneous blink next to two deliberate ones does not turn a double blink into a triple.
 - **Clench detector.** The RMS of the 20-100 Hz band, with mains notched out, must stay above the threshold for 0.4 s.
 - **Thresholds.** A calibrated threshold is a floor. When the signal gets noisier, the detectors raise it to 6 times the measured noise (blink) or 5 times the resting EMG level (clench).
-- **Driver.** Frames without the ADS1299 status header are dropped, and a jump of more than 2500 µV between samples is treated as an SPI glitch.
+- **Driver.** Frames without the ADS1299 status header are dropped. A jump of more than 2500 µV between samples on one input is treated as an SPI glitch: that input keeps its previous value for up to two samples, and the other inputs are unaffected.
 - **Message.** Each action is one JSON datagram, sent twice as cheap insurance against Wi-Fi packet loss. The receiver drops the copy using `id` and `seq`, ignores messages with the wrong token, and presses its own key for the action rather than the message's `key`. The token travels unencrypted, so it guards against accidents and pranks, not attackers.
 
 ```json

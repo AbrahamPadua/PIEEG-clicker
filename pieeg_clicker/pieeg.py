@@ -212,10 +212,10 @@ class PiEEG:
         self._drdy2 = None
         self._cs2 = None
         self._last: Optional[np.ndarray] = None
-        self._held = 0
+        self._held = np.zeros(self.n_channels, dtype=int)  # frames held in a row, per input
         self.missed = 0      # samples lost because we were too slow
         self.bad_frames = 0  # frames without the 0b1100 status header
-        self.glitches = 0    # frames replaced because of an impossible jump
+        self.glitches = 0    # frames with an input held because of an impossible jump
 
     # --- low-level SPI -------------------------------------------------------------
     @contextmanager
@@ -329,14 +329,18 @@ class PiEEG:
         return np.array(rows)
 
     def _deglitch(self, sample: np.ndarray) -> np.ndarray:
-        """Hold the previous sample over a corrupted frame; accept a real step after 3 frames."""
-        if self._last is not None and self._held < 2 and np.abs(sample - self._last).max() > MAX_JUMP_UV:
-            self._held += 1
-            self.glitches += 1
-            return self._last
-        self._held = 0
-        self._last = sample
-        return sample
+        """Per input, hold the previous value over a corrupted frame; accept a real step after 3 frames.
+
+        Per input, so one unwired input swinging with mains hum cannot freeze the others.
+        """
+        if self._last is None:
+            self._last = sample
+            return sample
+        jump = (np.abs(sample - self._last) > MAX_JUMP_UV) & (self._held < 2)
+        self.glitches += int(jump.any())
+        self._held = np.where(jump, self._held + 1, 0)
+        self._last = np.where(jump, self._last, sample)
+        return self._last
 
     def _decode(self, frame) -> Optional[np.ndarray]:
         b = np.frombuffer(bytes(frame), dtype=np.uint8)

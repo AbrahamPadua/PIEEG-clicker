@@ -147,6 +147,17 @@ class DriverTests(unittest.TestCase):
         self.assertIsNone(source._decode([0xC0] * 26))
         self.assertEqual(source.bad_frames, 2)
 
+    def test_jump_on_one_input_does_not_hold_the_others(self):
+        source = pieeg.PiEEG(HardwareConfig())
+        source._deglitch(np.zeros(8))
+        sample = np.full(8, 100.0)  # a blink-sized change on every input
+        sample[7] = 10_000.0        # and an impossible jump on input 8
+        outputs = [source._deglitch(sample.copy()) for _ in range(3)]
+        for out in outputs:
+            np.testing.assert_allclose(out[:7], 100.0)
+        self.assertEqual([out[7] for out in outputs], [0.0, 0.0, 10_000.0])  # a lasting step is kept on frame 3
+        self.assertEqual(source.glitches, 2)
+
     def test_second_chip_timeout_identifies_gpio_setting(self):
         with hardware() as hw:
             hw.source.start()
