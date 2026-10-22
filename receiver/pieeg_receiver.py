@@ -172,12 +172,12 @@ class Receiver:
         action = msg.get("action")
         if not isinstance(action, str):
             return
-        name = self.overrides.get(action) or msg.get("key") or DEFAULT_KEYS.get(action)
+        # Never press a key the packet names: a forged packet can then only change slides.
+        key = self.overrides.get(action) or DEFAULT_KEYS.get(action)
         stamp = time.strftime("%H:%M:%S")
         try:
-            if not name:
+            if not key:
                 raise ValueError(f"no key known for action {action!r}")
-            key = normalize_key(name)
             if self.backend is not None:
                 self.backend.tap(key)
         except Exception as exc:  # never let one bad message stop the presentation
@@ -241,7 +241,7 @@ def main(argv: list[str] | None = None) -> int:
                         help="how to press keys; auto picks uinput on Linux/Wayland, else pynput")
     parser.add_argument("--dry-run", action="store_true", help="only print, press nothing")
     parser.add_argument("--map", action="append", default=[], type=parse_map, metavar="ACTION=KEY",
-                        help="use KEY for ACTION whatever the Pi sends, e.g. --map next=right "
+                        help="use KEY for ACTION instead of its default, e.g. --map next=right "
                              "(repeatable)")
     args = parser.parse_args(argv)
 

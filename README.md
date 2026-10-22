@@ -146,7 +146,7 @@ Press Ctrl+C to stop.
 - **Linux, X11:** pynput works (it needs an X server). `pip install pynput` compiles python-evdev, which needs gcc and python3-dev; `sudo apt install python3-pynput` avoids that.
 - **Linux, Wayland:** pynput cannot reach native Wayland apps. Use `--backend uinput`, which needs python-evdev and access to `/dev/uinput` (see `extras/99-pieeg-uinput.rules`; you must also be in the `input` group). With the default `--backend auto`, the receiver tries uinput first on Wayland and falls back to pynput with a warning.
 
-Options: `--token TEXT` (only accept messages with this shared secret; set one, or anyone on the network can press keys), `--port N` (default 5005), `--bind ADDR` (default `0.0.0.0`, which also receives broadcasts), `--backend auto|pynput|uinput`, `--dry-run` (print what would be pressed, press nothing; handy for testing the network path) and `--map ACTION=KEY` (press KEY for ACTION whatever the Pi sends, for example `--map next=right`; repeatable).
+Options: `--token TEXT` (only accept messages with this shared secret; set one, or anyone on the network can press keys), `--port N` (default 5005), `--bind ADDR` (default `0.0.0.0`, which also receives broadcasts), `--backend auto|pynput|uinput`, `--dry-run` (print what would be pressed, press nothing; handy for testing the network path) and `--map ACTION=KEY` (press KEY for ACTION instead of its default, for example `--map next=right`; repeatable). The receiver picks the key for each action itself and ignores any key named in a message, so a forged message can at most change slides.
 
 ## Usage
 
@@ -214,7 +214,7 @@ Settings live in a JSON file: `~/.config/pieeg-clicker/config.json` (or under `$
 | Field | Default | Meaning |
 |---|---|---|
 | `mapping` | `double_blink: "next"`, `triple_blink: "previous"`, `clench: null` | Gesture to action. Actions: `next`, `previous`, `blank`; `null` turns a gesture off |
-| `keys` | `next: "page_down"`, `previous: "page_up"`, `blank: "b"` | Key sent for each action (`b` blanks the screen in most presentation software) |
+| `keys` | `next: "page_down"`, `previous: "page_up"`, `blank: "b"` | Key pressed for each action by the `uinput` output (`b` blanks the screen in most presentation software). The laptop receiver uses its own keys instead; change them with its `--map` option |
 | `output.mode` | `"udp"` | `udp` sends to the laptop receiver, `uinput` types on the Pi itself, `console` only prints (testing) |
 | `output.host` | `"255.255.255.255"` | Laptop IP address. The broadcast default needs no setup, but the laptop's own IP is more reliable |
 | `output.port` | `5005` | UDP port; must match the receiver's `--port` |
@@ -282,7 +282,7 @@ laptop receiver: check token, drop the duplicate -> key press
 - **Clench detector.** The RMS of the 20-100 Hz band, with mains notched out, must stay above the threshold for 0.4 s.
 - **Thresholds.** A calibrated threshold is a floor. When the signal gets noisier, the detectors raise it to 6 times the measured noise (blink) or 5 times the resting EMG level (clench).
 - **Driver.** Frames without the ADS1299 status header are dropped, and a jump of more than 2500 µV between samples is treated as an SPI glitch.
-- **Message.** Each action is one JSON datagram, sent twice as cheap insurance against Wi-Fi packet loss. The receiver drops the copy using `id` and `seq` and ignores messages with the wrong token. The token travels unencrypted, so it guards against accidents and pranks, not attackers.
+- **Message.** Each action is one JSON datagram, sent twice as cheap insurance against Wi-Fi packet loss. The receiver drops the copy using `id` and `seq`, ignores messages with the wrong token, and presses its own key for the action rather than the message's `key`. The token travels unencrypted, so it guards against accidents and pranks, not attackers.
 
 ```json
 {"app": "pieeg-clicker", "v": 1, "id": "3fa91c2e", "seq": 7, "action": "next", "key": "page_down", "token": "SOME-SECRET"}
@@ -342,6 +342,7 @@ config.example.json           the default configuration
 config.pieeg16.example.json    PiEEG-16 configuration (frontal inputs 1/2)
 tests/test_detection.py       synthetic end-to-end tests
 tests/test_pieeg.py           mocked hardware and 16-channel checks
+tests/test_receiver.py        which UDP messages the receiver turns into key presses
 pyproject.toml                packaging (optional): numpy, scipy
 ```
 
