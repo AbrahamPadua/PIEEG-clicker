@@ -282,7 +282,7 @@ laptop receiver: check token, drop the duplicate -> key press
 - **Clench detector.** The RMS of the 20-100 Hz band, with mains notched out, must stay above the threshold for 0.4 s.
 - **Thresholds.** A calibrated threshold is a floor. When the signal gets noisier, the detectors raise it to 6 times the measured noise (blink) or 5 times the resting EMG level (clench).
 - **Driver.** Frames without the ADS1299 status header are dropped. A jump of more than 2500 µV between samples on one input is treated as an SPI glitch: that input keeps its previous value for up to two samples, and the other inputs are unaffected.
-- **Message.** Each action is one JSON datagram, sent twice as cheap insurance against Wi-Fi packet loss. The receiver drops the copy using `id` and `seq`, ignores messages with the wrong token, and presses its own key for the action rather than the message's `key`. The token travels unencrypted, so it guards against accidents and pranks, not attackers.
+- **Message.** Each action is one JSON datagram, sent twice as cheap insurance against Wi-Fi packet loss. The receiver drops the copy using `id` and `seq` and ignores messages with the wrong token. It also ignores the `key` field and presses its own key for each action. The token travels unencrypted, so it guards against accidents and pranks, not attackers.
 
 ```json
 {"app": "pieeg-clicker", "v": 1, "id": "3fa91c2e", "seq": 7, "action": "next", "key": "page_down", "token": "SOME-SECRET"}
